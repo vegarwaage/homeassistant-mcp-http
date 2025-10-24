@@ -436,7 +436,9 @@ const mcpServer = new HAMCPServer();
 
 // MCP endpoints (require auth) - with and without /mcp/ prefix for reverse proxy compatibility
 app.get('/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
+app.post('/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.get('/mcp/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
+app.post('/mcp/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.post('/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
 app.post('/mcp/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
 
