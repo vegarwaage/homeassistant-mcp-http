@@ -1,8 +1,8 @@
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
-# Install Node.js
-RUN apk add --no-cache nodejs npm
+# Install Node.js and jq
+RUN apk add --no-cache nodejs npm jq
 
 # Set working directory
 WORKDIR /app
@@ -10,7 +10,7 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install all dependencies (including dev for build)
+# Install dependencies
 RUN npm ci
 
 # Copy source files and build configuration
@@ -20,9 +20,12 @@ COPY src ./src
 # Build TypeScript
 RUN npm run build
 
-# Remove dev dependencies to reduce image size
+# Remove dev dependencies
 RUN npm prune --production
 
-# Copy rootfs (s6-overlay services)
-COPY rootfs /
-RUN chmod +x /etc/s6-overlay/s6-rc.d/mcp-server/run
+# Copy run script
+COPY run.sh /run.sh
+RUN chmod +x /run.sh
+
+# Run the script directly
+CMD ["/run.sh"]
