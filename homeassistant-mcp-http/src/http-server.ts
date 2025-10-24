@@ -473,7 +473,7 @@ app.get('/.well-known/oauth-protected-resource/mcp/sse', (req: Request, res: Res
   const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
   res.json({
     resource: `${baseUrl}/mcp/sse`,
-    authorization_servers: [`${baseUrl}/.well-known/oauth-authorization-server`]
+    authorization_servers: [baseUrl]
   });
 });
 

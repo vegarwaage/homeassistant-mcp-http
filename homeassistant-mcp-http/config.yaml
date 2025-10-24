@@ -1,5 +1,5 @@
 name: Home Assistant MCP HTTP Server
-version: "1.0.15"
+version: "1.0.16"
 slug: homeassistant_mcp_http
 description: HTTP MCP server with OAuth for Claude iOS/web access
 arch:
