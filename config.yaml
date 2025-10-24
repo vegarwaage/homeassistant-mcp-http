@@ -1,0 +1,21 @@
+name: Home Assistant MCP HTTP Server
+version: "1.0.0"
+slug: homeassistant_mcp_http
+description: HTTP MCP server with OAuth for Claude iOS/web access
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+boot: auto
+ingress: true
+ingress_port: 3000
+panel_icon: mdi:robot
+homeassistant_api: true
+ports: {}
+options:
+  oauth_client_url: ""
+schema:
+  oauth_client_url: str
