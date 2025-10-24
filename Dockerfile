@@ -23,6 +23,8 @@ RUN npm run build
 # Remove dev dependencies to reduce image size
 RUN npm prune --production
 
-# Copy rootfs (s6-overlay services)
-COPY rootfs /
-RUN chmod +x /etc/s6-overlay/s6-rc.d/mcp-server/run
+# Copy run script
+COPY run.sh /
+RUN chmod a+x /run.sh
+
+CMD [ "/run.sh" ]

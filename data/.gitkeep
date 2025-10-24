@@ -1,0 +1,2 @@
+# This directory stores runtime data (sessions, encryption key)
+# Ignored in .dockerignore to prevent including in image
