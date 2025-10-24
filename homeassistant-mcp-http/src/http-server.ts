@@ -3,8 +3,10 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cookieParser from 'cookie-parser';
+import { randomBytes } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -395,6 +397,54 @@ class HAMCPServer {
     registerSystemTools(this.tools);
   }
 
+  // Setup handlers for a new server instance (used by Streamable HTTP sessions)
+  setupHandlersForServer(server: Server, accessToken: string) {
+    // List available tools
+    server.setRequestHandler(ListToolsRequestSchema, async () => {
+      const toolList = Array.from(this.tools.keys()).map(name => {
+        const tool = this.getToolDefinition(name);
+        return tool;
+      });
+
+      return { tools: toolList };
+    });
+
+    // Execute tool
+    server.setRequestHandler(CallToolRequestSchema, async (request) => {
+      const { name, arguments: args } = request.params;
+
+      const toolFn = this.tools.get(name);
+      if (!toolFn) {
+        throw new Error(`Unknown tool: ${name}`);
+      }
+
+      // Create HA client with user's token
+      const haClient = new HomeAssistantClient('http://homeassistant:8123', accessToken);
+
+      try {
+        const result = await toolFn(haClient, args || {});
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      } catch (error: any) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Error: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    });
+  }
+
   private getToolDefinition(name: string) {
     // Same tool definitions as stdio version
     const definitions: Record<string, any> = {
@@ -599,7 +649,87 @@ class HAMCPServer {
 
 const mcpServer = new HAMCPServer();
 
-// MCP endpoints (require auth) - with and without /mcp/ prefix for reverse proxy compatibility
+// MCP Streamable HTTP session storage
+const streamableTransports: Map<string, {
+  transport: StreamableHTTPServerTransport;
+  server: Server;
+  accessToken: string;
+}> = new Map();
+
+// MCP Streamable HTTP endpoints (primary, with OAuth)
+app.post('/mcp', requireAuth, async (req: Request, res: Response) => {
+  const sessionId = req.headers['mcp-session-id'] as string;
+  const accessToken = (req as any).accessToken;
+
+  try {
+    if (!sessionId) {
+      // New session - create transport and server
+      const newSessionId = randomBytes(16).toString('hex');
+
+      // Create a new MCP server instance for this session
+      const server = new Server(
+        {
+          name: 'homeassistant-mcp-http',
+          version: '1.0.0',
+        },
+        {
+          capabilities: {
+            tools: {},
+          },
+        }
+      );
+
+      // Register handlers with access token in closure
+      mcpServer.setupHandlersForServer(server, accessToken);
+
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId
+      });
+
+      streamableTransports.set(newSessionId, { transport, server, accessToken });
+
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } else {
+      // Existing session
+      const session = streamableTransports.get(sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      await session.transport.handleRequest(req, res, req.body);
+    }
+  } catch (error: any) {
+    console.error('Streamable HTTP error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+app.get('/mcp', requireAuth, async (req: Request, res: Response) => {
+  const sessionId = req.headers['mcp-session-id'] as string;
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'mcp-session-id header required' });
+  }
+
+  const session = streamableTransports.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+
+  try {
+    await session.transport.handleRequest(req, res, req.body);
+  } catch (error: any) {
+    console.error('Streamable HTTP GET error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// Legacy SSE endpoints (kept for backward compatibility)
 app.get('/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.post('/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.get('/mcp/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
@@ -626,7 +756,16 @@ app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response)
 });
 
 // OAuth discovery metadata - Protected Resource (RFC 9728)
-// Path-specific endpoint for the /mcp/sse resource
+// Path-specific endpoint for the /mcp resource (Streamable HTTP)
+app.get('/.well-known/oauth-protected-resource/mcp', (req: Request, res: Response) => {
+  const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
+  res.json({
+    resource: `${baseUrl}/mcp`,
+    authorization_servers: [baseUrl]
+  });
+});
+
+// Legacy SSE protected resource endpoint
 app.get('/.well-known/oauth-protected-resource/mcp/sse', (req: Request, res: Response) => {
   const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
   res.json({
