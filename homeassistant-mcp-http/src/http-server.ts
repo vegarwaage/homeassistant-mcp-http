@@ -617,9 +617,11 @@ app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response)
     token_endpoint: `${baseUrl}/mcp/oauth/token`,
     revocation_endpoint: `${baseUrl}/mcp/oauth/revoke`,
     registration_endpoint: `${baseUrl}/mcp/oauth/register`,
+    scopes_supported: ["mcp:access"],
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"],
-    code_challenge_methods_supported: ["S256", "plain"]
+    grant_types_supported: ["authorization_code", "refresh_token"],
+    code_challenge_methods_supported: ["S256", "plain"],
+    token_endpoint_auth_methods_supported: ["none"]
   });
 });
 
