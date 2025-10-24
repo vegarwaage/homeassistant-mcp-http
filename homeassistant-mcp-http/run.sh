@@ -1,11 +1,14 @@
-#!/usr/bin/with-contenv bashio
+#!/usr/bin/with-contenv bash
+# shellcheck shell=bash
+set -e
 
-# Get OAuth URL from addon config
-OAUTH_CLIENT_URL=$(bashio::config 'oauth_client_url')
+# Get configuration
+CONFIG_PATH=/data/options.json
+OAUTH_CLIENT_URL=$(jq --raw-output '.oauth_client_url' $CONFIG_PATH)
 
-if [ -z "$OAUTH_CLIENT_URL" ]; then
-    bashio::log.error "oauth_client_url not configured!"
-    bashio::log.error "Please configure your DuckDNS URL in addon options"
+if [ -z "$OAUTH_CLIENT_URL" ] || [ "$OAUTH_CLIENT_URL" = "null" ]; then
+    echo "[ERROR] oauth_client_url not configured!"
+    echo "[ERROR] Please configure your DuckDNS URL in addon options"
     exit 1
 fi
 
@@ -14,9 +17,9 @@ export OAUTH_CLIENT_URL="${OAUTH_CLIENT_URL}"
 export SUPERVISOR_TOKEN="${SUPERVISOR_TOKEN}"
 export INGRESS_PATH="${INGRESS_PATH}"
 
-bashio::log.info "Starting MCP HTTP Server..."
-bashio::log.info "OAuth Client URL: ${OAUTH_CLIENT_URL}"
-bashio::log.info "Ingress Path: ${INGRESS_PATH}"
+echo "[INFO] Starting MCP HTTP Server..."
+echo "[INFO] OAuth Client URL: ${OAUTH_CLIENT_URL}"
+echo "[INFO] Ingress Path: ${INGRESS_PATH}"
 
 # Start server
 cd /app
