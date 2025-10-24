@@ -1,115 +1,72 @@
-# Home Assistant MCP HTTP Server
+# Home Assistant MCP Add-on Repository
 
-HTTP-based MCP server addon for Home Assistant with OAuth authentication.
+Home Assistant add-ons for Model Context Protocol (MCP) integration with Claude.
 
-Enables Claude iOS and web apps to access your Home Assistant instance via the Model Context Protocol.
+## Add-ons
 
-## Features
+This repository contains the following add-on:
 
+### Home Assistant MCP HTTP Server
+
+![Supports aarch64 Architecture][aarch64-shield]
+![Supports amd64 Architecture][amd64-shield]
+![Supports armhf Architecture][armhf-shield]
+![Supports armv7 Architecture][armv7-shield]
+![Supports i386 Architecture][i386-shield]
+
+HTTP-based MCP server with OAuth authentication for Claude iOS and web access.
+
+**Features:**
 - 17 MCP tools for controlling and monitoring Home Assistant
 - OAuth 2.0 authentication using Home Assistant accounts
-- Respects Home Assistant user permissions
-- Encrypted session storage
+- Encrypted session storage with AES-256-GCM
 - Automatic token refresh
 - Works via Home Assistant ingress (no port forwarding needed)
 
+[See full documentation →](homeassistant-mcp-http/README.md)
+
 ## Installation
 
-1. Add this repository to Home Assistant:
-   - Settings → Add-ons → Add-on Store → ⋮ → Repositories
-   - Add: `https://github.com/vegarwaage/homeassistant-mcp-server`
+1. Click this button to add the repository to your Home Assistant instance:
 
-2. Install "Home Assistant MCP HTTP Server"
+   [![Add Repository][repository-badge]][repository-url]
 
-3. Configure your DuckDNS URL:
-   - Go to addon Configuration tab
-   - Set `oauth_client_url` to your DuckDNS URL (e.g., `https://yourname.duckdns.org`)
+2. Or add manually:
+   - Go to **Settings** → **Add-ons** → **Add-on Store** → **⋮** (three dots menu) → **Repositories**
+   - Add this URL: `https://github.com/vegarwaage/homeassistant-mcp-http`
 
-4. Start the addon
+3. Install the "Home Assistant MCP HTTP Server" add-on
 
-## Configuration
+4. Configure your external URL (DuckDNS, etc.) in the add-on configuration
 
-```yaml
-oauth_client_url: "https://yourname.duckdns.org"
-```
+5. Start the add-on
 
-**Important:** You must have DuckDNS or another external URL configured for this to work.
+## Requirements
 
-## Usage with Claude
+- Home Assistant instance accessible from the internet via HTTPS
+- DuckDNS or another external URL configured
+- Claude.ai account (for using Claude web/iOS)
 
-### Claude iOS/Web
+## Support
 
-1. Go to https://claude.ai → Settings → Connectors → Add Custom Connector
+If you have questions or issues:
 
-2. Enter:
-   - Name: `Home Assistant`
-   - URL: `https://yourname.duckdns.org/homeassistant_mcp_http` (ingress URL)
+1. Check the [add-on documentation](homeassistant-mcp-http/README.md)
+2. Review [Home Assistant add-on documentation](https://www.home-assistant.io/addons/)
+3. [Open an issue](https://github.com/vegarwaage/homeassistant-mcp-http/issues) on GitHub
 
-3. Use a tool in Claude (e.g., "List my automations")
+## Related Projects
 
-4. Click "Authorize" when prompted
-
-5. Log in with your Home Assistant credentials
-
-### Available Tools
-
-**States & Control:**
-- `ha_get_states` - Query entity states
-- `ha_get_history` - Historical data
-- `ha_call_service` - Control devices
-- `ha_get_entity_details` - Entity details
-
-**Configuration:**
-- `ha_read_config` - Read config files
-- `ha_write_config` - Write config files (with backup)
-- `ha_list_files` - Browse files
-- `ha_validate_config` - Validate changes
-- `ha_reload_config` - Reload configs
-- `ha_list_backups` - View backups
-
-**Automations:**
-- `ha_create_automation` - Create automation
-- `ha_update_automation` - Update automation
-- `ha_delete_automation` - Delete automation
-- `ha_list_automations` - List automations
-
-**System:**
-- `ha_system_info` - System info
-- `ha_get_logs` - Fetch logs
-- `ha_restart` - Restart HA
-
-## Security
-
-- OAuth tokens encrypted at rest (AES-256-GCM)
-- Sessions expire automatically
-- Respects Home Assistant user permissions
-- All communication via HTTPS (HA ingress)
-
-## Troubleshooting
-
-**"oauth_client_url not configured" error:**
-- Go to addon Configuration tab
-- Set your DuckDNS URL
-- Restart addon
-
-**"Authentication failed" error:**
-- Verify DuckDNS URL is correct and accessible
-- Check Home Assistant is accessible from internet
-- Try logging out and back in
-
-**Tool execution fails:**
-- Check Home Assistant logs
-- Verify user has permission for the action
-- Check token hasn't expired
-
-## Development
-
-Built with:
-- TypeScript
-- Express.js
-- @modelcontextprotocol/sdk
-- Home Assistant OAuth API
+- [homeassistant-mcp-server](https://github.com/vegarwaage/homeassistant-assistant) - stdio-based MCP server for Claude Code/Desktop
 
 ## License
 
 MIT
+
+[aarch64-shield]: https://img.shields.io/badge/aarch64-yes-green.svg
+[amd64-shield]: https://img.shields.io/badge/amd64-yes-green.svg
+[armhf-shield]: https://img.shields.io/badge/armhf-yes-green.svg
+[armv7-shield]: https://img.shields.io/badge/armv7-yes-green.svg
+[i386-shield]: https://img.shields.io/badge/i386-yes-green.svg
+[repository-badge]: https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg
+[repository-url]: https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fvegarwaage%2Fhomeassistant-mcp-http
