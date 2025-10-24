@@ -22,6 +22,13 @@ import {
   getValidAccessToken
 } from './oauth.js';
 import { cleanupExpiredSessions } from './session.js';
+import {
+  registerClient,
+  storeAuthorizationCode,
+  exchangeAuthorizationCode,
+  validateAccessToken,
+  revokeAccessToken
+} from './oauth-server.js';
 
 const app = express();
 const PORT = 3000;
@@ -58,8 +65,49 @@ setInterval(() => {
   cleanupExpiredSessions().catch(console.error);
 }, 86400000);
 
+// Store PKCE challenges temporarily
+const pkceStates = new Map<string, {
+  code_challenge: string;
+  code_challenge_method: string;
+  client_id: string;
+  redirect_uri: string;
+  created: number;
+}>();
+
+// Cleanup expired PKCE states every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [state, data] of pkceStates.entries()) {
+    if (now - data.created > 3600000) { // 1 hour
+      pkceStates.delete(state);
+    }
+  }
+}, 3600000);
+
 // OAuth: Start authorization flow - with and without /mcp/ prefix
 const handleAuthorize = (req: Request, res: Response) => {
+  const { code_challenge, code_challenge_method, client_id, redirect_uri, state: clientState } = req.query;
+
+  // If PKCE parameters are provided, store them
+  if (code_challenge && code_challenge_method && client_id && redirect_uri) {
+    const state = clientState as string || generateState();
+
+    pkceStates.set(state, {
+      code_challenge: code_challenge as string,
+      code_challenge_method: code_challenge_method as string,
+      client_id: client_id as string,
+      redirect_uri: redirect_uri as string,
+      created: Date.now()
+    });
+
+    oauthStates.set(state, { created: Date.now() });
+
+    // Redirect to Home Assistant authorization with our state
+    const authorizeUrl = getAuthorizeUrl(state);
+    return res.redirect(authorizeUrl);
+  }
+
+  // Legacy flow without PKCE
   const state = generateState();
   oauthStates.set(state, { created: Date.now() });
 
@@ -83,6 +131,30 @@ const handleCallback = async (req: Request, res: Response) => {
   }
   oauthStates.delete(state);
 
+  // Check if this is a PKCE flow
+  const pkceData = pkceStates.get(state);
+
+  if (pkceData) {
+    // PKCE flow: Create authorization code and redirect back to client
+    pkceStates.delete(state);
+
+    const authCode = storeAuthorizationCode({
+      client_id: pkceData.client_id,
+      code_challenge: pkceData.code_challenge,
+      code_challenge_method: pkceData.code_challenge_method,
+      redirect_uri: pkceData.redirect_uri,
+      ha_code: code
+    });
+
+    // Redirect back to the client's redirect_uri with the authorization code
+    const redirectUrl = new URL(pkceData.redirect_uri);
+    redirectUrl.searchParams.set('code', authCode);
+    redirectUrl.searchParams.set('state', state);
+
+    return res.redirect(redirectUrl.toString());
+  }
+
+  // Legacy flow: Exchange code for tokens directly
   try {
     // Exchange code for tokens
     const tokens = await exchangeCodeForToken(code);
@@ -130,6 +202,89 @@ const handleLogout = (req: Request, res: Response) => {
 };
 app.post('/oauth/logout', handleLogout);
 app.post('/mcp/oauth/logout', handleLogout);
+
+// OAuth 2.1: Dynamic Client Registration (RFC 7591)
+const handleRegister = (req: Request, res: Response) => {
+  const { redirect_uris } = req.body;
+
+  if (!redirect_uris || !Array.isArray(redirect_uris) || redirect_uris.length === 0) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'redirect_uris is required and must be an array'
+    });
+  }
+
+  const client = registerClient(redirect_uris);
+
+  res.json({
+    client_id: client.client_id,
+    client_secret: client.client_secret,
+    redirect_uris: client.redirect_uris,
+    client_id_issued_at: Math.floor(client.created_at / 1000)
+  });
+};
+app.post('/register', handleRegister);
+app.post('/mcp/register', handleRegister);
+app.post('/oauth/register', handleRegister);
+app.post('/mcp/oauth/register', handleRegister);
+
+// OAuth 2.1: Token Endpoint (with PKCE validation)
+const handleToken = async (req: Request, res: Response) => {
+  const { grant_type, code, code_verifier, client_id, redirect_uri } = req.body;
+
+  if (grant_type !== 'authorization_code') {
+    return res.status(400).json({
+      error: 'unsupported_grant_type',
+      error_description: 'Only authorization_code grant type is supported'
+    });
+  }
+
+  if (!code || !code_verifier || !client_id) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'code, code_verifier, and client_id are required'
+    });
+  }
+
+  const tokens = exchangeAuthorizationCode({
+    code,
+    code_verifier,
+    client_id,
+    redirect_uri: redirect_uri || ''
+  });
+
+  if (!tokens) {
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: 'Invalid authorization code or code verifier'
+    });
+  }
+
+  res.json(tokens);
+};
+app.post('/token', handleToken);
+app.post('/mcp/token', handleToken);
+app.post('/oauth/token', handleToken);
+app.post('/mcp/oauth/token', handleToken);
+
+// OAuth 2.1: Token Revocation
+const handleRevoke = (req: Request, res: Response) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({
+      error: 'invalid_request',
+      error_description: 'token is required'
+    });
+  }
+
+  revokeAccessToken(token);
+  res.status(200).send();
+};
+app.post('/revoke', handleRevoke);
+app.post('/mcp/revoke', handleRevoke);
+app.post('/oauth/revoke', handleRevoke);
+app.post('/mcp/oauth/revoke', handleRevoke);
 
 // Middleware: Verify session
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -459,11 +614,12 @@ app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response)
   res.json({
     issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/mcp/oauth/authorize`,
-    token_endpoint: `${baseUrl}/auth/token`,
-    revocation_endpoint: `${baseUrl}/auth/revoke`,
+    token_endpoint: `${baseUrl}/mcp/oauth/token`,
+    revocation_endpoint: `${baseUrl}/mcp/oauth/revoke`,
+    registration_endpoint: `${baseUrl}/mcp/oauth/register`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code"],
-    code_challenge_methods_supported: ["S256"]
+    code_challenge_methods_supported: ["S256", "plain"]
   });
 });
 
