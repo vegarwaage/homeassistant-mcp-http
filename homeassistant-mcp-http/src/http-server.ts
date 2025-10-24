@@ -48,17 +48,19 @@ setInterval(() => {
   cleanupExpiredSessions().catch(console.error);
 }, 86400000);
 
-// OAuth: Start authorization flow
-app.get('/oauth/authorize', (req: Request, res: Response) => {
+// OAuth: Start authorization flow - with and without /mcp/ prefix
+const handleAuthorize = (req: Request, res: Response) => {
   const state = generateState();
   oauthStates.set(state, { created: Date.now() });
 
   const authorizeUrl = getAuthorizeUrl(state);
   res.redirect(authorizeUrl);
-});
+};
+app.get('/oauth/authorize', handleAuthorize);
+app.get('/mcp/oauth/authorize', handleAuthorize);
 
-// OAuth: Handle callback
-app.get('/oauth/callback', async (req: Request, res: Response) => {
+// OAuth: Handle callback - with and without /mcp/ prefix
+const handleCallback = async (req: Request, res: Response) => {
   const { code, state } = req.query;
 
   if (!code || !state || typeof code !== 'string' || typeof state !== 'string') {
@@ -107,13 +109,17 @@ app.get('/oauth/callback', async (req: Request, res: Response) => {
 
     res.status(500).send('Authentication failed. Please try again.');
   }
-});
+};
+app.get('/oauth/callback', handleCallback);
+app.get('/mcp/oauth/callback', handleCallback);
 
-// OAuth: Logout
-app.post('/oauth/logout', (req: Request, res: Response) => {
+// OAuth: Logout - with and without /mcp/ prefix
+const handleLogout = (req: Request, res: Response) => {
   res.clearCookie('mcp_session');
   res.json({ success: true });
-});
+};
+app.post('/oauth/logout', handleLogout);
+app.post('/mcp/oauth/logout', handleLogout);
 
 // Middleware: Verify session
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -122,7 +128,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!sessionId) {
     return res.status(401).json({
       error: 'unauthorized',
-      auth_url: '/oauth/authorize'
+      auth_url: '/mcp/oauth/authorize'
     });
   }
 
@@ -132,7 +138,7 @@ async function requireAuth(req: Request, res: Response, next: NextFunction) {
     res.clearCookie('mcp_session');
     return res.status(401).json({
       error: 'unauthorized',
-      auth_url: '/oauth/authorize'
+      auth_url: '/mcp/oauth/authorize'
     });
   }
 
@@ -428,12 +434,17 @@ class HAMCPServer {
 
 const mcpServer = new HAMCPServer();
 
-// MCP endpoints (require auth)
+// MCP endpoints (require auth) - with and without /mcp/ prefix for reverse proxy compatibility
 app.get('/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
+app.get('/mcp/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.post('/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
+app.post('/mcp/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
 
-// Health check
+// Health check - with and without /mcp/ prefix
 app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+app.get('/mcp/health', (req: Request, res: Response) => {
   res.json({ status: 'ok' });
 });
 
