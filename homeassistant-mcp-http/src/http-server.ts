@@ -452,23 +452,28 @@ app.post('/mcp/sse', requireAuth, (req, res) => mcpServer.handleSSE(req, res));
 app.post('/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
 app.post('/mcp/messages', requireAuth, (req, res) => mcpServer.handleMessage(req, res));
 
-// OAuth discovery metadata for MCP endpoints
-app.get('/.well-known/oauth-authorization-server/mcp/sse', (req: Request, res: Response) => {
+// OAuth discovery metadata - Authorization Server (RFC 8414)
+// This is the primary discovery endpoint at the domain root
+app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response) => {
   const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
   res.json({
+    issuer: baseUrl,
     authorization_endpoint: `${baseUrl}/mcp/oauth/authorize`,
     token_endpoint: `${baseUrl}/auth/token`,
     revocation_endpoint: `${baseUrl}/auth/revoke`,
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"]
+    grant_types_supported: ["authorization_code"],
+    code_challenge_methods_supported: ["S256"]
   });
 });
 
+// OAuth discovery metadata - Protected Resource (RFC 9728)
+// Path-specific endpoint for the /mcp/sse resource
 app.get('/.well-known/oauth-protected-resource/mcp/sse', (req: Request, res: Response) => {
   const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
   res.json({
     resource: `${baseUrl}/mcp/sse`,
-    authorization_servers: [`${baseUrl}/.well-known/oauth-authorization-server/mcp/sse`]
+    authorization_servers: [`${baseUrl}/.well-known/oauth-authorization-server`]
   });
 });
 
