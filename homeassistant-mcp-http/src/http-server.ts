@@ -2,6 +2,7 @@
 // ABOUTME: Serves SSE transport, OAuth endpoints, and MCP tools
 
 import express, { Request, Response, NextFunction } from 'express';
+import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { randomBytes } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -20,8 +21,7 @@ import {
   generateState,
   getAuthorizeUrl,
   exchangeCodeForToken,
-  createSession,
-  getValidAccessToken
+  createSession
 } from './oauth.js';
 import { cleanupExpiredSessions } from './session.js';
 import {
@@ -34,6 +34,15 @@ import {
 
 const app = express();
 const PORT = 3000;
+
+// CORS configuration for Claude.ai browser access
+app.use(cors({
+  origin: ['https://claude.ai', 'https://*.claude.ai', /https:\/\/.*\.claude\.ai$/],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'],
+  exposedHeaders: ['Mcp-Session-Id', 'WWW-Authenticate'],
+  methods: ['GET', 'POST', 'OPTIONS']
+}));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -288,29 +297,43 @@ app.post('/mcp/revoke', handleRevoke);
 app.post('/oauth/revoke', handleRevoke);
 app.post('/mcp/oauth/revoke', handleRevoke);
 
-// Middleware: Verify session
+// Middleware: Verify Bearer token (OAuth 2.1)
 async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.cookies.mcp_session;
+  const baseUrl = process.env.OAUTH_CLIENT_URL || 'https://selwaha.duckdns.org';
+  const authHeader = req.headers.authorization;
 
-  if (!sessionId) {
+  // Check for Bearer token in Authorization header
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Return 401 with WWW-Authenticate header for OAuth discovery
+    res.setHeader('WWW-Authenticate',
+      `Bearer realm="${baseUrl}", ` +
+      `resource_metadata="${baseUrl}/.well-known/oauth-protected-resource/mcp"`
+    );
     return res.status(401).json({
       error: 'unauthorized',
-      auth_url: '/mcp/oauth/authorize'
+      error_description: 'Bearer token required'
     });
   }
 
-  const accessToken = await getValidAccessToken(sessionId);
+  const token = authHeader.substring(7);
+  const haAccessToken = validateAccessToken(token);
 
-  if (!accessToken) {
-    res.clearCookie('mcp_session');
+  if (!haAccessToken) {
+    // Invalid or expired token - return WWW-Authenticate header
+    res.setHeader('WWW-Authenticate',
+      `Bearer realm="${baseUrl}", ` +
+      `resource_metadata="${baseUrl}/.well-known/oauth-protected-resource/mcp", ` +
+      `error="invalid_token", ` +
+      `error_description="Token expired or invalid"`
+    );
     return res.status(401).json({
-      error: 'unauthorized',
-      auth_url: '/mcp/oauth/authorize'
+      error: 'invalid_token',
+      error_description: 'Token expired or invalid'
     });
   }
 
-  // Attach access token to request
-  (req as any).accessToken = accessToken;
+  // Attach HA access token to request for tool handlers
+  (req as any).accessToken = haAccessToken;
   next();
 }
 
@@ -751,7 +774,7 @@ app.get('/.well-known/oauth-authorization-server', (req: Request, res: Response)
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     code_challenge_methods_supported: ["S256", "plain"],
-    token_endpoint_auth_methods_supported: ["none"]
+    token_endpoint_auth_methods_supported: ["none", "client_secret_post"]
   });
 });
 
